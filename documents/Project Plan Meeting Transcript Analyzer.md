@@ -20,20 +20,20 @@
 
 ---
 
-## **🟡 Step 2: Ingestion & Vector Memory**
+## **🟡 Step 2: Ingestion & Vector Memory** [COMPLETED]
 
 **Goal:** Enable file processing and storage in MongoDB.
 
-* **Task 2.1: File Handling Logic \[NOT STARTED\]**  
+* **Task 2.1: File Handling Logic [COMPLETED]**  
   * **Backend:** Implement a `POST /upload` endpoint to receive `.txt` files.  
   * **Frontend:** Create a file input field and an "Upload" button using `FormData`.  
-* **Task 2.2: Text Chunking & ADA Embeddings \[NOT STARTED\]**  
-  * **Backend:** Write a utility to split text into \~800 character chunks.  
+* **Task 2.2: Text Chunking & ADA Embeddings [COMPLETED]**  
+  * **Backend:** Write a utility to split text into ~800 character chunks.  
   * **Backend:** Integrate the **ADA model** to generate a 1536-dimension vector for each chunk.  
-* **Task 2.3: MongoDB Persistence \[NOT STARTED\]**  
+* **Task 2.3: MongoDB Persistence [COMPLETED]**  
   * **Backend:** Save the text chunks and their corresponding vectors into the MongoDB collection.  
-  * **Database:** Manually create the **Vector Search Index** in the MongoDB Atlas dashboard.  
-* **Task 2.4: Integration Test \[NOT STARTED\]**  
+  * **Database:** Manually create the **Vector Search Index** in the MongoDB Atlas dashboard (see README).  
+* **Task 2.4: Integration Test [PENDING]**  
   * Verify that uploading a file in the UI results in multiple documents appearing in your MongoDB collection with valid `embedding` arrays.
 
 ---

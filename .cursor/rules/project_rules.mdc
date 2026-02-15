@@ -32,7 +32,7 @@
 
 // 9. Test Scripts
 // - Please feel free to write test scripts to test APIs, DB connectivity, LLM availability, etc.
-// - Make sure to keep the tests in a "test_scripts" folder.
+// - Keep the test scripts in backend/test_scripts/.
 // - There is no need to gitignore the "test_scripts" folder.
 
 alwaysApply: true

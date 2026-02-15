@@ -1,5 +1,6 @@
 fastapi
 uvicorn
 openai
+pymongo
 python-dotenv
 python-multipart

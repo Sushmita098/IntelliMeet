@@ -44,11 +44,35 @@ npm start
 Copy `backend/.env.example` to `backend/.env` and set:
 
 - `AZURE_OPENAI_KEY` ? Your Azure OpenAI API key
-- `AZURE_OPENAI_ENDPOINT` ? Your Azure OpenAI endpoint URL
-- `AZURE_OPENAI_DEPLOYMENT_NAME` ? Your deployment name (e.g. `gpt-5.2-mini` or `gpt-4o-mini`)
+- `AZURE_OPENAI_ENDPOINT` ? Base URL (e.g. `https://your-resource.openai.azure.com`)
+- `AZURE_OPENAI_DEPLOYMENT_NAME` ? Chat model deployment name
+- `AZURE_OPENAI_EMBEDDING_DEPLOYMENT_NAME` ? Embedding model deployment (e.g. `text-embedding-ada-002`)
+- `AZURE_OPENAI_API_VERSION` ? Use `2025-04-01-preview` for Responses API
+- `MONGO_URI` ? MongoDB Atlas connection string (required for Step 2+)
+
+### 4. MongoDB Vector Search Index (required for upload / RAG)
+
+In MongoDB Atlas, create a **Vector Search Index** on the `transcripts` collection:
+
+1. Go to your cluster ? Browse Collections ? `meeting_analyzer_db` ? `transcripts`
+2. Search Indexes ? Create Search Index ? JSON Editor
+3. Use this definition (index name: `vector_index`):
+
+```json
+{
+  "fields": [
+    {
+      "numDimensions": 1536,
+      "path": "embedding",
+      "similarity": "cosine",
+      "type": "vector"
+    }
+  ]
+}
+```
 
 ## Running the App
 
 1. Start the backend: `cd backend && uvicorn main:app --reload --port 8000`
 2. Start the frontend: `cd frontend && npm start`
-3. Open http://localhost:3000 ? you should see "Connected" and can use "Ask Basic" to test the LLM.
+3. Open http://localhost:3000 ? upload a .txt transcript, then use Ask Basic or Search (Step 3).
