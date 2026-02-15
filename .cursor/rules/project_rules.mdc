@@ -1,0 +1,39 @@
+// Project Structure & Maintenance Rules for Meeting Transcript Analyzer
+
+// 1. Folder Structure
+// - Keep the backend and frontend code in separate folders at the root (e.g., /backend, /frontend).
+// - Only a single README.md should exist in the root folder for overall project instructions and documentation pointers.
+
+// 2. Documentation Location
+// - The complete technical documentation is located at: @documents/Techinal Documentation Meeting Transcript Analyzer.md
+
+// 3. Project Plan & Progress Tracking
+// - The active project plan is stored in: @documents/Project Plan Meeting Transcript Analyzer.md
+// - Use this document to guide development. Mark progress on each step as you work (update status to [IN PROGRESS], [COMPLETED], [BACKLOG], and add completion/backlog notes as tasks finish).
+// - Always add notes directly in the plan to reflect current progress after you finish a step or encounter a blocker.
+
+// 4. Environment Variables Management
+// - Always maintain a .env.example file in the backend folder as a reference for all required environment variables.
+// - DO NOT generate the actual .env automatically; the developer will copy .env.example and create/fill .env manually as needed.
+
+// 5. Developer Hand-off & Interactivity
+// - If any manual action or configuration is required from the developer, HALT execution and clearly explain what they need to do before continuing.
+
+// 6. Python Package Installation
+// - Use UV (https://github.com/astral-sh/uv) for Python package installation at all times. Do not use pip or other installers.
+
+// 7. Dependency Management
+// - Always keep a requirements.txt file updated in the backend folder with all dependencies. UV must use this file for environment setup (e.g., `uv pip install -r requirements.txt`).
+// - Never install Python packages individually or outside of requirements.txt. Add/remove packages only through updating requirements.txt and re-installing via UV as above.
+
+// 8. Sensitive Data & File Ignoring
+// - Never hardcode sensitive values (API keys, tokens, connection URIs, etc.) in source code. Only use environment variables defined in .env (or .env.example).
+// - Always maintain an up-to-date .gitignore that excludes: .env, .env.*, __pycache__/, node_modules/, and any other sensitive/unnecessary files or folders relevant to both backend and frontend.
+
+// 9. Test Scripts
+// - Please feel free to write test scripts to test APIs, DB connectivity, LLM availability, etc.
+// - Make sure to keep the tests in a "test_scripts" folder.
+// - There is no need to gitignore the "test_scripts" folder.
+
+alwaysApply: true
+---
