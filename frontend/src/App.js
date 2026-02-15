@@ -9,6 +9,9 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [file, setFile] = useState(null);
   const [uploadStatus, setUploadStatus] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchAnswer, setSearchAnswer] = useState('');
+  const [searchLoading, setSearchLoading] = useState(false);
 
   useEffect(() => {
     const checkHealth = async () => {
@@ -54,6 +57,28 @@ function App() {
       setUploadStatus(`Error: ${err.message}`);
     }
     setLoading(false);
+  };
+
+  const handleSearch = async () => {
+    if (!searchQuery.trim()) return;
+    setSearchLoading(true);
+    setSearchAnswer('');
+    try {
+      const res = await fetch(`${API_BASE}/ask`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: searchQuery.trim() }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setSearchAnswer(data.answer);
+      } else {
+        setSearchAnswer(`Error: ${data.detail || res.statusText}`);
+      }
+    } catch (err) {
+      setSearchAnswer(`Error: ${err.message}`);
+    }
+    setSearchLoading(false);
   };
 
   const handleAskBasic = async () => {
@@ -118,7 +143,32 @@ function App() {
           )}
         </section>
         <section className="llm-section">
-          <h3>2. Basic LLM Ping</h3>
+          <h3>2. Search Transcript (RAG)</h3>
+          <p>Ask questions about your uploaded meeting transcript.</p>
+          <div className="search-controls">
+            <input
+              type="text"
+              placeholder="e.g. What were the main decisions?"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+              disabled={searchLoading}
+            />
+            <button onClick={handleSearch} disabled={searchLoading || !searchQuery.trim()}>
+              {searchLoading ? 'Searching...' : 'Search'}
+            </button>
+          </div>
+          {searchLoading && (
+            <div className="search-spinner" aria-label="Searching">
+              <span className="spinner"></span> Searching and generating...
+            </div>
+          )}
+          {searchAnswer && (
+            <div className="ai-response">{searchAnswer}</div>
+          )}
+        </section>
+        <section className="llm-section">
+          <h3>3. Basic LLM Ping</h3>
           <p>Send a test prompt to Azure GPT to verify connectivity.</p>
           <button onClick={handleAskBasic} disabled={loading}>
             {loading ? 'Calling AI...' : 'Ask Basic'}

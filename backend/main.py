@@ -2,9 +2,11 @@
 Meeting Transcript Analyzer - FastAPI Backend
 Step 1: Connectivity & Foundation
 Step 2: Ingestion & Vector Memory
+Step 3: Retrieval Augmented Generation (RAG)
 """
 import os
 from fastapi import FastAPI, HTTPException, UploadFile, File
+from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 from openai import AzureOpenAI
 from pymongo import MongoClient
@@ -154,6 +156,123 @@ async def upload_transcript(file: UploadFile = File(...)):
         collection.insert_many(documents)
 
     return {"message": f"Successfully processed {len(documents)} chunks", "chunks": len(documents)}
+
+
+class AskRequest(BaseModel):
+    """Request body for /ask (RAG)."""
+    query: str
+
+
+VECTOR_INDEX_NAME = "vector_index"
+
+
+def _cosine_similarity(a: list[float], b: list[float]) -> float:
+    """Compute cosine similarity between two vectors."""
+    import math
+    dot = sum(x * y for x, y in zip(a, b))
+    norm_a = math.sqrt(sum(x * x for x in a))
+    norm_b = math.sqrt(sum(x * x for x in b))
+    if norm_a == 0 or norm_b == 0:
+        return 0.0
+    return dot / (norm_a * norm_b)
+
+
+def _vector_search_fallback(collection, query_embedding: list[float], limit: int = 5) -> list[dict]:
+    """
+    Fallback when $vectorSearch is unavailable (e.g. local MongoDB without vector index).
+    Fetches docs with embeddings and computes cosine similarity in Python.
+    """
+    docs = list(collection.find({"embedding": {"$exists": True}}, {"text": 1, "embedding": 1}))
+    if not docs:
+        return []
+    scored = [(doc, _cosine_similarity(query_embedding, doc["embedding"])) for doc in docs]
+    scored.sort(key=lambda x: x[1], reverse=True)
+    return [{"text": doc["text"]} for doc, _ in scored[:limit]]
+
+
+def _call_azure_rag(context: str, query: str) -> str:
+    """
+    Call Azure OpenAI with RAG context. Supports Responses API and Chat Completions.
+    """
+    client = get_azure_client()
+    deployment = os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME", "gpt-5.2-mini")
+    api_version = os.getenv("AZURE_OPENAI_API_VERSION", "2024-08-01-preview")
+    prompt = f"""Use the following context from a meeting transcript to answer the question. If the answer is not in the context, say so.
+
+Context:
+{context}
+
+Question: {query}"""
+
+    if api_version.startswith("2025"):
+        response = client.responses.create(
+            model=deployment,
+            input=prompt,
+        )
+        return response.output_text
+
+    response = client.chat.completions.create(
+        model=deployment,
+        messages=[
+            {"role": "system", "content": "Answer based on the context. If unknown, say so."},
+            {"role": "user", "content": prompt},
+        ],
+    )
+    return response.choices[0].message.content
+
+
+@app.post("/ask")
+async def ask_question(req: AskRequest):
+    """
+    RAG endpoint: vectorizes query, searches MongoDB for relevant chunks, generates answer.
+    Requires Vector Search Index on transcripts collection (see README).
+    """
+    query = (req.query or "").strip()
+    if not query:
+        raise HTTPException(status_code=400, detail="query is required")
+
+    try:
+        # 1. Vectorize query
+        query_embedding = get_embedding(query)
+
+        # 2. Vector similarity search (try $vectorSearch first, fallback to Python similarity)
+        collection = get_mongo_collection()
+        results = None
+        try:
+            pipeline = [
+                {
+                    "$vectorSearch": {
+                        "index": VECTOR_INDEX_NAME,
+                        "path": "embedding",
+                        "queryVector": query_embedding,
+                        "numCandidates": 50,
+                        "limit": 5,
+                    }
+                },
+                {"$project": {"text": 1, "_id": 0}},
+            ]
+            results = list(collection.aggregate(pipeline))
+        except Exception:
+            # Fallback for local MongoDB or when Vector Search Index is not configured
+            results = _vector_search_fallback(collection, query_embedding, limit=5)
+
+        if not results:
+            return {
+                "answer": "No relevant content found. Upload a transcript first and ensure the Vector Search Index exists."
+            }
+
+        context_text = "\n\n".join(r["text"] for r in results if r.get("text"))
+
+        # 3. Generate answer with context
+        answer = _call_azure_rag(context_text, query)
+        return {"answer": answer}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/health")

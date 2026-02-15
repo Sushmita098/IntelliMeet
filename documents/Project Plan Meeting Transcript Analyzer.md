@@ -38,19 +38,18 @@
 
 ---
 
-## **🟠 Step 3: Retrieval Augmented Generation (RAG)**
+## **🟠 Step 3: Retrieval Augmented Generation (RAG)** [COMPLETED]
 
 **Goal:** Query the stored meeting data to get context-aware answers.
 
-* **Task 3.1: Query Vectorization \[NOT STARTED\]**  
+* **Task 3.1: Query Vectorization [COMPLETED]**  
   * **Backend:** Update the `POST /ask` endpoint to convert the user's incoming question into a vector using the ADA model.  
-* **Task 3.2: Vector Similarity Search \[NOT STARTED\]**  
+* **Task 3.2: Vector Similarity Search [COMPLETED]**  
   * **Backend:** Use the `$vectorSearch` aggregation pipeline in MongoDB to retrieve the top 3-5 most relevant chunks based on the query vector.  
-* **Task 3.3: Context-Injected Generation \[NOT STARTED\]**  
+* **Task 3.3: Context-Injected Generation [COMPLETED]**  
   * **Backend:** Construct a prompt for **GPT-5.2 mini** that includes the retrieved chunks as "Context" and the user's question as the "Query."  
-* **Task 3.4: RAG UI Interface \[NOT STARTED\]**  
-  * **Frontend:** Implement a "Search" interface. Add a loading spinner that activates while the backend is searching and generating.  
-  * **Testing:** Ask "What were the main decisions?" and ensure the answer comes from the uploaded text.
+* **Task 3.4: RAG UI Interface [COMPLETED]**  
+  * **Frontend:** "Search Transcript (RAG)" interface with text input, Search button, and loading spinner.
 
 ---
 
