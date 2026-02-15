@@ -1,0 +1,98 @@
+.App {
+  text-align: center;
+  min-height: 100vh;
+}
+
+.App-header {
+  background-color: #282c34;
+  padding: 2rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-size: calc(10px + 2vmin);
+  color: white;
+}
+
+.App-header h1 {
+  margin: 0 0 0.5rem 0;
+  font-size: 1.8rem;
+}
+
+.App-header h2 {
+  margin: 0 0 0.5rem 0;
+  font-size: 1.2rem;
+  font-weight: 400;
+  color: #aaa;
+}
+
+.App-header p {
+  margin: 0.5rem 0 0 0;
+  font-weight: 600;
+}
+
+.status-connected {
+  color: #4ade80 !important;
+}
+
+.status-checking {
+  color: #fbbf24 !important;
+}
+
+.status-disconnected {
+  color: #f87171 !important;
+}
+
+.App-main {
+  max-width: 600px;
+  margin: 2rem auto;
+  padding: 1rem;
+}
+
+.llm-section {
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 1.5rem;
+  text-align: left;
+}
+
+.llm-section h3 {
+  margin: 0 0 0.5rem 0;
+  font-size: 1.2rem;
+}
+
+.llm-section p {
+  margin: 0 0 1rem 0;
+  color: #6b7280;
+  font-size: 0.95rem;
+}
+
+.llm-section button {
+  padding: 0.5rem 1rem;
+  font-size: 1rem;
+  background: #3b82f6;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.llm-section button:hover:not(:disabled) {
+  background: #2563eb;
+}
+
+.llm-section button:disabled {
+  background: #9ca3af;
+  cursor: not-allowed;
+}
+
+.ai-response {
+  margin-top: 1rem;
+  padding: 1rem;
+  background: white;
+  border-radius: 6px;
+  border: 1px solid #e5e7eb;
+  white-space: pre-wrap;
+  word-break: break-word;
+}

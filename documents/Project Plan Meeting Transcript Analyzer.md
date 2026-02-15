@@ -1,20 +1,20 @@
 ## **Project Plan Meeting Transcript Analyzer**
 
-## **🟢 Step 1: Connectivity & Foundation**
+## **🟢 Step 1: Connectivity & Foundation** [COMPLETED]
 
 **Goal:** Establish the communication bridge between React, FastAPI, and Azure OpenAI.
 
-* **Task 1.1: Backend Environment Setup \[NOT STARTED\]**  
+* **Task 1.1: Backend Environment Setup [COMPLETED]**  
   * Initialize a Python virtual environment.  
   * Install dependencies: `fastapi`, `uvicorn`, `openai`, `python-dotenv`, `python-multipart`.  
-  * Create a `.env` file for Azure credentials and Mongo URI.  
-* **Task 1.2: Frontend Initialization \[NOT STARTED\]**  
+  * Create a `.env.example` file for Azure credentials and Mongo URI (copy to `.env` and fill values).  
+* **Task 1.2: Frontend Initialization [COMPLETED]**  
   * Create a React app using `npx create-react-app`.  
   * Setup a basic layout with a "System Status" header.  
-* **Task 1.3: Health Check & CORS \[NOT STARTED\]**  
+* **Task 1.3: Health Check & CORS [COMPLETED]**  
   * **Backend:** Create a `GET /health` endpoint and configure `CORSMiddleware` to allow the frontend origin.  
   * **Frontend:** Use `useEffect` to fetch from `/health` and display a "Connected" status.  
-* **Task 1.4: Basic LLM Ping \[NOT STARTED\]**  
+* **Task 1.4: Basic LLM Ping [COMPLETED]**  
   * **Backend:** Create a `POST /ask-basic` endpoint that sends a hardcoded prompt to **Azure GPT-5.2 mini**.  
   * **Frontend:** Create a text box and button to trigger this endpoint and display the AI's response.
 
