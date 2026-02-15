@@ -4,12 +4,58 @@ This document provides a comprehensive technical guide for building a meeting tr
 
 ## **1\. System Architecture**
 
+### **Current (Steps 1–4): Basic RAG Pipeline**
+
 The application follows a RAG pipeline to turn text transcripts into actionable insights.
 
 * **Ingestion:** Upload `.txt` transcripts.  
 * **Processing:** Split text into chunks and generate embeddings using the Azure OpenAI **ADA model** ($text-embedding-ada-002$).  
-* **Storage:** Chunks and vector embeddings are stored in **MongoDB Atlas**.  
-* **Retrieval & Generation:** User questions trigger a vector search; relevant chunks are sent to **Azure OpenAI GPT-5.2 mini** to generate a response.
+* **Storage:** Chunks and vector embeddings are stored in **MongoDB**.  
+* **Retrieval & Generation:** User questions trigger a vector search; relevant chunks are sent to **Azure OpenAI GPT** to generate a response.
+
+### **Planned (Step 5): LangChain RAG-as-Tool & File-Scoped Chats**
+
+A refined architecture using LangChain with RAG exposed as a tool and file-scoped conversations:
+
+* **File-Scoped Chats:** Each uploaded file has its own chat context. Users select or switch the active file; all chats occur within that file’s transcript only.  
+* **RAG as Tool:** RAG retrieval is implemented as a LangChain tool. The LLM can call the tool multiple times per turn (e.g., search for decisions, then action items, then follow-ups).  
+* **LangChain Agent:** An agent with access to the RAG tool orchestrates reasoning. It decides when to search, how many times, and combines results to answer the user.  
+* **Multi-Turn Conversation:** Chat history is maintained per file/session, enabling follow-up questions and coherent multi-turn dialogue.
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                         Frontend (React)                         │
+│  [File Selector] [Chat Panel] [History per file/session]         │
+└─────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    Backend (FastAPI)                             │
+│  POST /chat { file_id, message, session_id? }                    │
+│         │                                                        │
+│         ▼                                                        │
+│  ┌─────────────────────────────────────────────────────────────┐ │
+│  │            LangChain Agent (Azure OpenAI)                    │ │
+│  │  Tools: [search_transcript]                                  │ │
+│  │                                                              │ │
+│  │  User: "What decisions and action items?"                    │ │
+│  │  Agent → tool(search_transcript, "decisions") → chunks       │ │
+│  │       → tool(search_transcript, "action items") → chunks     │ │
+│  │       → synthesize answer                                    │ │
+│  └─────────────────────────────────────────────────────────────┘ │
+│         │                                                        │
+│         ▼                                                        │
+│  ┌─────────────────────────────────────────────────────────────┐ │
+│  │  RAG Tool: search_transcript(query, file_id)                 │ │
+│  │  - Vectorize query                                           │ │
+│  │  - Search chunks filtered by file_id                         │ │
+│  │  - Return top-k chunks as context                            │ │
+│  └─────────────────────────────────────────────────────────────┘ │
+│         │                                                        │
+│         ▼                                                        │
+│  MongoDB: transcripts { text, embedding, filename, file_id }     │
+└─────────────────────────────────────────────────────────────────┘
+```
 
 ## **2\. Backend: Python FastAPI**
 
@@ -17,6 +63,7 @@ The backend orchestrates the file processing, embedding generation, and LLM comm
 
 ### **Dependencies (`requirements.txt`)**
 
+**Current (Steps 1–4):**
 ```
 fastapi
 uvicorn
@@ -24,6 +71,13 @@ pymongo
 openai
 python-dotenv
 python-multipart
+```
+
+**Planned (Step 5 – LangChain):**
+```
+langchain
+langchain-openai
+langchain-community
 ```
 
 ### **Core Implementation (`main.py`)**
@@ -200,3 +254,46 @@ AZURE_OPENAI_ENDPOINT=[https://your-resource.openai.azure.com/](https://your-res
 MONGO_URI=mongodb+srv://user:pass@cluster.mongodb.net/
 ```
 
+---
+
+## **6\. Step 5: LangChain RAG-as-Tool & File-Scoped Chats (Planned)**
+
+### **6.1 Overview**
+
+Step 5 introduces LangChain for orchestration, with RAG retrieval exposed as a tool. The LLM can call the RAG tool multiple times per turn, enabling richer answers (e.g., decisions + action items in one question). Chats are scoped per file.
+
+### **6.2 Data Model Updates**
+
+* **transcripts collection:** Add `file_id` (or use `filename` as key) to every chunk so retrieval can be filtered by file.  
+* **Sessions:** Maintain `session_id` per chat; optional `file_id` per session to scope the RAG tool to that file.
+
+### **6.3 LangChain Components**
+
+* **LLM:** `ChatAzureOpenAI` (or equivalent) configured with Azure endpoint and deployment.  
+* **Vector Store:** MongoDB-based retriever (e.g. `MongoDBAtlasVectorSearch` or custom retriever) filtered by `file_id`.  
+* **Tool:** `search_transcript(query: str, file_id: str) -> str` — runs similarity search on chunks for that file and returns top-k chunks as text.  
+* **Agent:** ReAct-style agent with the `search_transcript` tool. The agent decides when and how often to call it.
+
+### **6.4 Dependencies (requirements.txt additions)**
+
+```
+langchain
+langchain-openai
+langchain-community
+```
+
+### **6.5 API: POST /chat**
+
+| Field        | Type   | Description                                      |
+|-------------|--------|--------------------------------------------------|
+| `file_id`   | string | ID/filename of the transcript to scope chat to   |
+| `message`   | string | User message                                     |
+| `session_id`| string | (Optional) Session ID for multi-turn history     |
+
+**Response:** `{ "answer": "...", "session_id": "..." }`
+
+### **6.6 Frontend Changes**
+
+* **File selector:** Dropdown or list of uploaded files; selected file sets the active chat context.  
+* **Chat panel:** Message input + history display scoped to the selected file.  
+* **Multi-turn:** Send `session_id` with each message to maintain conversation history.

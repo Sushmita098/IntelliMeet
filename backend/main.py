@@ -3,10 +3,12 @@ Meeting Transcript Analyzer - FastAPI Backend
 Step 1: Connectivity & Foundation
 Step 2: Ingestion & Vector Memory
 Step 3: Retrieval Augmented Generation (RAG)
+Step 5: LangChain RAG-as-Tool & File-Scoped Chats
 """
 import os
+import uuid
 from fastapi import FastAPI, HTTPException, UploadFile, File
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from fastapi.middleware.cors import CORSMiddleware
 from openai import AzureOpenAI
 from pymongo import MongoClient
@@ -155,7 +157,24 @@ async def upload_transcript(file: UploadFile = File(...)):
     if documents:
         collection.insert_many(documents)
 
-    return {"message": f"Successfully processed {len(documents)} chunks", "chunks": len(documents)}
+    return {
+        "message": f"Successfully processed {len(documents)} chunks",
+        "chunks": len(documents),
+        "filename": file.filename,
+    }
+
+
+@app.get("/files")
+async def list_files():
+    """List unique filenames (files) that have been uploaded and indexed."""
+    try:
+        collection = get_mongo_collection()
+        files = collection.distinct("filename")
+        return {"files": [f for f in files if f]}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 class AskRequest(BaseModel):
@@ -177,17 +196,53 @@ def _cosine_similarity(a: list[float], b: list[float]) -> float:
     return dot / (norm_a * norm_b)
 
 
-def _vector_search_fallback(collection, query_embedding: list[float], limit: int = 5) -> list[dict]:
+def _vector_search_fallback(
+    collection, query_embedding: list[float], limit: int = 5, filename: str | None = None
+) -> list[dict]:
     """
-    Fallback when $vectorSearch is unavailable (e.g. local MongoDB without vector index).
-    Fetches docs with embeddings and computes cosine similarity in Python.
+    Fallback when $vectorSearch is unavailable. Fetches docs, optionally filtered by filename.
     """
-    docs = list(collection.find({"embedding": {"$exists": True}}, {"text": 1, "embedding": 1}))
+    filt = {"embedding": {"$exists": True}}
+    if filename:
+        filt["filename"] = filename
+    docs = list(collection.find(filt, {"text": 1, "embedding": 1}))
     if not docs:
         return []
     scored = [(doc, _cosine_similarity(query_embedding, doc["embedding"])) for doc in docs]
     scored.sort(key=lambda x: x[1], reverse=True)
     return [{"text": doc["text"]} for doc, _ in scored[:limit]]
+
+
+def search_transcript_scoped(query: str, filename: str | None = None, limit: int = 5) -> str:
+    """
+    File-scoped RAG search: vectorize query, search chunks (optionally by filename), return context.
+    Used by LangChain RAG tool and /chat endpoint.
+    """
+    if not filename:
+        raise ValueError("filename is required for file-scoped search")
+    query_embedding = get_embedding(query)
+    collection = get_mongo_collection()
+    results = None
+    try:
+        pipeline = [
+            {
+                "$vectorSearch": {
+                    "index": VECTOR_INDEX_NAME,
+                    "path": "embedding",
+                    "queryVector": query_embedding,
+                    "numCandidates": 50,
+                    "limit": limit,
+                    "filter": {"filename": filename},
+                }
+            },
+            {"$project": {"text": 1, "_id": 0}},
+        ]
+        results = list(collection.aggregate(pipeline))
+    except Exception:
+        results = _vector_search_fallback(collection, query_embedding, limit=limit, filename=filename)
+    if not results:
+        return "No relevant content found for this query in the transcript."
+    return "\n\n".join(r["text"] for r in results if r.get("text"))
 
 
 def _call_azure_rag(context: str, query: str) -> str:
@@ -269,6 +324,138 @@ async def ask_question(req: AskRequest):
 
     except HTTPException:
         raise
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# --- Step 5: LangChain RAG-as-Tool & File-Scoped Chats ---
+
+def _create_rag_tool(filename: str):
+    """Create a LangChain tool for RAG search scoped to a specific file."""
+    from langchain_core.tools import tool
+
+    @tool
+    def search_transcript(query: str) -> str:
+        """Search the meeting transcript for relevant content. Use this tool when you need to find information from the uploaded transcript. Call it multiple times with different queries if needed (e.g. once for decisions, once for action items)."""
+        return search_transcript_scoped(query, filename=filename, limit=5)
+
+    return search_transcript
+
+
+def _get_langchain_llm():
+    """Create LangChain AzureChatOpenAI (uses Chat Completions API)."""
+    from langchain_openai import AzureChatOpenAI
+
+    api_key = os.getenv("AZURE_OPENAI_KEY")
+    endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
+    deployment = os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME", "gpt-5.2-mini")
+    # LangChain uses Chat Completions; use classic API if 2025 Responses API causes issues
+    api_version = os.getenv("AZURE_OPENAI_AGENT_API_VERSION", "2024-08-01-preview")
+    return AzureChatOpenAI(
+        azure_endpoint=endpoint.rstrip("/"),
+        api_key=api_key,
+        api_version=api_version,
+        azure_deployment=deployment,
+        temperature=0,
+    )
+
+
+_chat_memories: dict[str, list] = {}  # session_id -> list of (HumanMessage, AIMessage)
+
+
+class ChatRequest(BaseModel):
+    """Request body for /chat (file-scoped LangChain agent)."""
+    file_id: str = Field(..., description="Filename of the transcript to chat about")
+    message: str = Field(..., description="User message")
+    session_id: str | None = Field(None, description="Session ID for multi-turn; omit for new chat")
+
+
+@app.post("/chat")
+async def chat(req: ChatRequest):
+    """
+    File-scoped chat with LangChain agent. RAG is exposed as a tool; agent can call it multiple times.
+    """
+    file_id = (req.file_id or "").strip()
+    message = (req.message or "").strip()
+    session_id = req.session_id or str(uuid.uuid4())
+
+    if not file_id:
+        raise HTTPException(status_code=400, detail="file_id is required")
+    if not message:
+        raise HTTPException(status_code=400, detail="message is required")
+
+    # Verify file exists
+    collection = get_mongo_collection()
+    if collection.count_documents({"filename": file_id}) == 0:
+        raise HTTPException(status_code=404, detail=f"No transcript found for file: {file_id}")
+
+    try:
+        from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
+
+        llm = _get_langchain_llm()
+        tools = [_create_rag_tool(file_id)]
+        llm_with_tools = llm.bind_tools(tools)
+
+        # Get or create chat history
+        history = _chat_memories.get(session_id, [])
+        messages = list(history) + [HumanMessage(content=message)]
+
+        # Tool loop: invoke LLM; if it calls tools, run them and continue until final answer
+        max_turns = 10
+        for _ in range(max_turns):
+            response = llm_with_tools.invoke(messages)
+            messages.append(response)
+
+            if not response.tool_calls:
+                answer = response.content if isinstance(response.content, str) else str(response.content or "")
+                break
+
+            for tc in response.tool_calls:
+                tool_name = tc["name"]
+                tool_args = tc.get("args") or {}
+                tool_id = tc.get("id", "")
+                tool_func = next((t for t in tools if t.name == tool_name), None)
+                if tool_func:
+                    result = tool_func.invoke(tool_args)
+                    messages.append(
+                        ToolMessage(content=str(result), tool_call_id=tool_id)
+                    )
+                else:
+                    messages.append(
+                        ToolMessage(content=f"Unknown tool: {tool_name}", tool_call_id=tool_id)
+                    )
+        else:
+            answer = messages[-1].content if hasattr(messages[-1], "content") else "No response generated."
+
+        # Collect citations: transcript snippets returned by the RAG tool (ToolMessage contents)
+        citations = []
+        for m in messages:
+            if isinstance(m, ToolMessage) and getattr(m, "content", None):
+                # Tool returns chunks joined by "\n\n"; split into individual citations
+                raw = m.content if isinstance(m.content, str) else str(m.content)
+                for part in raw.split("\n\n"):
+                    part = part.strip()
+                    if part and part != "No relevant content found for this query in the transcript.":
+                        citations.append(part)
+        # Deduplicate while preserving order, limit size for UI
+        seen = set()
+        unique_citations = []
+        for c in citations:
+            if c not in seen and len(unique_citations) < 10:
+                seen.add(c)
+                unique_citations.append(c[:500] + ("..." if len(c) > 500 else ""))
+
+        # Persist history for multi-turn (keep last 20 messages)
+        _chat_memories[session_id] = messages[-20:] if len(messages) > 20 else messages
+
+        return {
+            "answer": answer or "No response generated.",
+            "session_id": session_id,
+            "citations": unique_citations,
+        }
+
     except Exception as e:
         import traceback
         traceback.print_exc()

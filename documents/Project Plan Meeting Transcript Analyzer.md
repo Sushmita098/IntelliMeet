@@ -67,3 +67,25 @@
   * **Backend:** Create a `DELETE /clear` endpoint to purge the MongoDB collection.  
   * **Frontend:** Add a "Reset Session" button to start a new analysis.
 
+---
+
+## **🟣 Step 5: LangChain RAG-as-Tool & File-Scoped Chats** [COMPLETED]
+
+**Goal:** Integrate LangChain with RAG exposed as a tool, enabling multi-turn chats scoped to each file and multiple RAG searches per conversation.
+
+* **Task 5.1: Data Model for File-Scoped Chats [COMPLETED]**  
+  * **Backend:** Chunks use `filename` in MongoDB. `GET /files` lists unique filenames.  
+  * **Backend:** Session tracked via `session_id`; history kept in memory.  
+  * **Frontend:** File selector (dropdown) for active chat context.  
+* **Task 5.2: LangChain Integration [COMPLETED]**  
+  * **Backend:** Added `langchain`, `langchain-openai`, `langchain-core`, `langgraph` to `requirements.txt`.  
+  * **Backend:** LangChain `AzureChatOpenAI` with `create_react_agent` from LangGraph.  
+  * **Backend:** RAG search scoped by `filename` in `search_transcript_scoped()`.  
+* **Task 5.3: RAG as Tool [COMPLETED]**  
+  * **Backend:** RAG exposed as LangChain tool `search_transcript(query)` scoped to file.  
+  * **Backend:** Agent can call the tool multiple times per turn.  
+* **Task 5.4: File-Scoped Chat API & UI [COMPLETED]**  
+  * **Backend:** `POST /chat` accepts `file_id`, `message`, optional `session_id`; returns agent response.  
+  * **Frontend:** File selector + chat panel scoped to selected file.  
+  * **Frontend:** Chat history display and multi-turn conversation.
+

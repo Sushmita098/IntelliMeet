@@ -4,3 +4,6 @@ openai
 pymongo
 python-dotenv
 python-multipart
+langchain
+langchain-openai
+langchain-core

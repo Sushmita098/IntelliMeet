@@ -1,17 +1,51 @@
 import React, { useState, useEffect } from 'react';
+import ReactMarkdown from 'react-markdown';
 import './App.css';
 
 const API_BASE = process.env.REACT_APP_API_URL || '';
+const CITATION_PREVIEW_CHARS = 100;
+
+function citationPreview(text, charLimit = CITATION_PREVIEW_CHARS) {
+  const trimmed = text.trim();
+  const isTruncated = trimmed.length > charLimit;
+  const preview = trimmed.slice(0, charLimit);
+  return { preview: isTruncated ? preview + '...' : preview, full: trimmed, isTruncated };
+}
 
 function App() {
   const [backendStatus, setBackendStatus] = useState('checking');
-  const [aiResponse, setAiResponse] = useState('');
-  const [loading, setLoading] = useState(false);
   const [file, setFile] = useState(null);
   const [uploadStatus, setUploadStatus] = useState('');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchAnswer, setSearchAnswer] = useState('');
-  const [searchLoading, setSearchLoading] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [files, setFiles] = useState([]);
+  const [selectedFile, setSelectedFile] = useState('');
+  const [chatMessages, setChatMessages] = useState([]);
+  const [chatInput, setChatInput] = useState('');
+  const [chatLoading, setChatLoading] = useState(false);
+  const [sessionId, setSessionId] = useState(null);
+  const [expandedCitations, setExpandedCitations] = useState(() => new Set());
+
+  const toggleCitation = (key) => {
+    setExpandedCitations((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  const fetchFiles = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/files`);
+      const data = await res.json();
+      if (res.ok && Array.isArray(data.files)) {
+        setFiles(data.files);
+        if (data.files.length > 0 && !selectedFile) setSelectedFile(data.files[0]);
+      }
+    } catch (err) {
+      console.error('Failed to fetch files:', err);
+    }
+  };
 
   useEffect(() => {
     const checkHealth = async () => {
@@ -28,6 +62,10 @@ function App() {
     return () => clearInterval(interval);
   }, []);
 
+  useEffect(() => {
+    fetchFiles();
+  }, [uploadStatus]);
+
   const handleUpload = async () => {
     if (!file) {
       setUploadStatus('Please select a file first.');
@@ -42,14 +80,13 @@ function App() {
     try {
       const formData = new FormData();
       formData.append('file', file);
-      const res = await fetch(`${API_BASE}/upload`, {
-        method: 'POST',
-        body: formData,
-      });
+      const res = await fetch(`${API_BASE}/upload`, { method: 'POST', body: formData });
       const data = await res.json();
       if (res.ok) {
-        setUploadStatus(`Success: ${data.message}`);
+        setUploadStatus(`Uploaded: ${data.filename}`);
         setFile(null);
+        fetchFiles();
+        if (data.filename) setSelectedFile(data.filename);
       } else {
         setUploadStatus(`Error: ${data.detail || res.statusText}`);
       }
@@ -59,124 +96,170 @@ function App() {
     setLoading(false);
   };
 
-  const handleSearch = async () => {
-    if (!searchQuery.trim()) return;
-    setSearchLoading(true);
-    setSearchAnswer('');
+  const handleChatSend = async () => {
+    if (!chatInput.trim() || !selectedFile) return;
+    const userMsg = chatInput.trim();
+    setChatInput('');
+    setChatMessages((prev) => [...prev, { role: 'user', content: userMsg }]);
+    setChatLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/ask`, {
+      const res = await fetch(`${API_BASE}/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: searchQuery.trim() }),
+        body: JSON.stringify({
+          file_id: selectedFile,
+          message: userMsg,
+          session_id: sessionId,
+        }),
       });
       const data = await res.json();
       if (res.ok) {
-        setSearchAnswer(data.answer);
+        setSessionId(data.session_id);
+        setChatMessages((prev) => [
+          ...prev,
+          { role: 'assistant', content: data.answer, citations: data.citations || [] },
+        ]);
       } else {
-        setSearchAnswer(`Error: ${data.detail || res.statusText}`);
+        setChatMessages((prev) => [
+          ...prev,
+          { role: 'assistant', content: `Error: ${data.detail || res.statusText}` },
+        ]);
       }
     } catch (err) {
-      setSearchAnswer(`Error: ${err.message}`);
+      setChatMessages((prev) => [
+        ...prev,
+        { role: 'assistant', content: `Error: ${err.message}` },
+      ]);
     }
-    setSearchLoading(false);
+    setChatLoading(false);
   };
 
-  const handleAskBasic = async () => {
-    setLoading(true);
-    setAiResponse('');
-    try {
-      const res = await fetch(`${API_BASE}/ask-basic`, { method: 'POST' });
-      const data = await res.json();
-      if (res.ok) {
-        setAiResponse(data.answer);
-      } else {
-        setAiResponse(`Error: ${data.detail || res.statusText}`);
-      }
-    } catch (err) {
-      setAiResponse(`Error: ${err.message}`);
-    }
-    setLoading(false);
+  const handleFileChange = (e) => {
+    setSelectedFile(e.target.value);
+    setChatMessages([]);
+    setSessionId(null);
   };
 
   return (
     <div className="App">
-      <header className="App-header">
+      <header className="chatbot-header">
         <h1>Meeting Transcript Analyzer</h1>
-        <h2>System Status</h2>
-        <p
-          className={
-            backendStatus === 'connected'
-              ? 'status-connected'
-              : backendStatus === 'checking'
-              ? 'status-checking'
-              : 'status-disconnected'
-          }
-        >
-          {backendStatus === 'connected'
-            ? 'Connected'
-            : backendStatus === 'checking'
-            ? 'Checking...'
-            : 'Disconnected'}
-        </p>
+        <span
+          className={`status-dot ${backendStatus === 'connected' ? 'connected' : backendStatus === 'checking' ? 'checking' : 'disconnected'}`}
+          title={backendStatus === 'connected' ? 'Connected' : backendStatus === 'checking' ? 'Checking...' : 'Disconnected'}
+        />
       </header>
-      <main className="App-main">
-        <section className="upload-section llm-section">
-          <h3>1. Upload Transcript</h3>
-          <p>Upload a .txt meeting transcript to chunk and index.</p>
-          <div className="upload-controls">
-            <input
-              type="file"
-              accept=".txt"
-              onChange={(e) => {
-                setFile(e.target.files?.[0] || null);
-                setUploadStatus('');
-              }}
-            />
-            <button onClick={handleUpload} disabled={loading}>
-              {loading ? 'Processing...' : 'Upload'}
-            </button>
-          </div>
-          {uploadStatus && (
-            <div className={`upload-status ${uploadStatus.startsWith('Error') ? 'error' : ''}`}>
-              {uploadStatus}
-            </div>
-          )}
-        </section>
-        <section className="llm-section">
-          <h3>2. Search Transcript (RAG)</h3>
-          <p>Ask questions about your uploaded meeting transcript.</p>
-          <div className="search-controls">
-            <input
-              type="text"
-              placeholder="e.g. What were the main decisions?"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-              disabled={searchLoading}
-            />
-            <button onClick={handleSearch} disabled={searchLoading || !searchQuery.trim()}>
-              {searchLoading ? 'Searching...' : 'Search'}
-            </button>
-          </div>
-          {searchLoading && (
-            <div className="search-spinner" aria-label="Searching">
-              <span className="spinner"></span> Searching and generating...
-            </div>
-          )}
-          {searchAnswer && (
-            <div className="ai-response">{searchAnswer}</div>
-          )}
-        </section>
-        <section className="llm-section">
-          <h3>3. Basic LLM Ping</h3>
-          <p>Send a test prompt to Azure GPT to verify connectivity.</p>
-          <button onClick={handleAskBasic} disabled={loading}>
-            {loading ? 'Calling AI...' : 'Ask Basic'}
+
+      <div className="chatbot-toolbar">
+        <div className="toolbar-upload">
+          <input
+            type="file"
+            accept=".txt"
+            id="upload-input"
+            onChange={(e) => {
+              setFile(e.target.files?.[0] || null);
+              setUploadStatus('');
+            }}
+          />
+          <label htmlFor="upload-input" className="upload-label">
+            Choose file
+          </label>
+          <button onClick={handleUpload} disabled={loading}>
+            {loading ? 'Uploading...' : 'Upload'}
           </button>
-          {aiResponse && (
-            <div className="ai-response">{aiResponse}</div>
+          {uploadStatus && (
+            <span className={`toolbar-status ${uploadStatus.startsWith('Error') ? 'error' : ''}`}>
+              {uploadStatus}
+            </span>
           )}
-        </section>
+        </div>
+        <div className="toolbar-select">
+          <label htmlFor="file-select">Transcript:</label>
+          <select
+            id="file-select"
+            value={selectedFile}
+            onChange={handleFileChange}
+            disabled={chatLoading}
+          >
+            <option value="">Select a transcript...</option>
+            {files.map((f) => (
+              <option key={f} value={f}>{f}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      <main className="chatbot-main">
+        <div className="chat-messages">
+          {chatMessages.length === 0 && (
+            <div className="chat-welcome">
+              {selectedFile ? (
+                <>Ask anything about <strong>{selectedFile}</strong>. The AI will search the transcript to answer.</>
+              ) : (
+                <>Upload a .txt transcript and select it above to start asking questions.</>
+              )}
+            </div>
+          )}
+          {chatMessages.map((msg, i) => (
+            <div key={i} className={`chat-bubble ${msg.role}`}>
+              <div className="bubble-content">
+                {msg.role === 'assistant' ? (
+                  <ReactMarkdown>{msg.content}</ReactMarkdown>
+                ) : (
+                  msg.content
+                )}
+              </div>
+              {msg.role === 'assistant' && msg.citations && msg.citations.length > 0 && (
+                <div className="bubble-citations">
+                  <span className="citations-label">From transcript:</span>
+                  {msg.citations.map((cite, j) => {
+                    const key = `${i}-${j}`;
+                    const { preview, full, isTruncated } = citationPreview(cite);
+                    const isExpanded = expandedCitations.has(key);
+                    return (
+                      <blockquote key={j} className="citation-quote">
+                        <span className="citation-text">
+                          {isTruncated && !isExpanded ? preview : full}
+                        </span>
+                        {isTruncated && (
+                          <button
+                            type="button"
+                            className="citation-toggle"
+                            onClick={() => toggleCitation(key)}
+                            aria-expanded={isExpanded}
+                          >
+                            {isExpanded ? 'Show less ▲' : 'Show more ▼'}
+                          </button>
+                        )}
+                      </blockquote>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          ))}
+          {chatLoading && (
+            <div className="chat-bubble assistant typing">
+              <span className="typing-dots"><span></span><span></span><span></span></span>
+            </div>
+          )}
+        </div>
+        <div className="chat-input-area">
+          <input
+            type="text"
+            placeholder={selectedFile ? 'Ask about this transcript...' : 'Select a transcript first'}
+            value={chatInput}
+            onChange={(e) => setChatInput(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handleChatSend()}
+            disabled={chatLoading || !selectedFile}
+          />
+          <button
+            onClick={handleChatSend}
+            disabled={chatLoading || !chatInput.trim() || !selectedFile}
+          >
+            Send
+          </button>
+        </div>
       </main>
     </div>
   );
