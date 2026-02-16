@@ -132,11 +132,32 @@ Upload the file and store it in S3, which will trigger a Lambda to do the chunki
 
 ### RAG/LLM approach & decisions: Choices considered and final choice for LLM / embedding model / vector database / orchestration framework, prompt & context management, guardrails, quality, observability
 
-**Key technical decisions you made and why:**
+#### 1. Choices considered and final choice
+
+| Component | Choice | Notes |
+|-----------|--------|-------|
+| LLM | Azure OpenAI (GPT) | Enterprise-ready; personal preference for OpenAI stack |
+| Embedding | `text-embedding-ada-002` | 1536-d vectors; cosine similarity in MongoDB |
+| Vector DB | MongoDB Atlas | `$vectorSearch`; single data store for metadata + vectors |
+| Orchestration | LangChain | Agent pattern; RAG exposed as a tool the agent calls on demand |
+
+#### 2. Prompt & context management
+
+- Fixed RAG prompt instructs the model to answer only from context; say "I don't know" if not found.
+- Top 5 chunks (~800 chars each) per query; file-scoped retrieval filters by `filename`.
+- Agent tool description guides when to call RAG and supports multi-query .
+
+#### 3. Guardrails
+
+- File-scoped RAG limits search to the selected transcript only.
+- No auth or content filtering implemented.
+
+
+### Key technical decisions you made and why:**
 
 I've chosen Python FastAPI since it's one of the best frameworks to create APIs easily, and React because Cursor could help me build the React frontend easily?it comes with libraries to show markdown formats in UI. Can also help integrate authentication easily in future versions. Using OpenAI for LLM and RAG is just a personal preference but wasn't necessary.
 
-**Engineering standards you've followed (and maybe some that you skipped):**
+### Engineering standards you've followed (and maybe some that you skipped):**
 
 *Considered:*
 - Stateless API which doesn't save chat history.
@@ -147,7 +168,7 @@ I've chosen Python FastAPI since it's one of the best frameworks to create APIs 
 - How to process large files?it might cause timeout errors.
 - Didn't add voice-to-transcript functionality yet.
 
-**How you used AI tools in your development process:**
+### How you used AI tools in your development process:**
 
 Upon deciding the project I want to make, the first step was to decide the tech stack I want to use. The initial step was to prepare a detailed technical documentation which would outline the tech stack I want to use and how I want to use those. I used Gemini to lay out the technical documentation for the project (IntelliMeet).
 
@@ -155,11 +176,8 @@ Secondly, I wanted to create a Project Plan document?the idea here was to levera
 
 I used Cursor as my development tool. Although I have used very specific Cursor rules to make it follow my development plan and scope strictly?my certain guidelines and preferred development and build strategy, folder structure, etc.
 
-**Entire thought process and the tech stack chosen:**
 
-We wanted to first start with just uploading a single file and checking if the embeddings are happening correctly or not, and whether we're getting output from the LLM. Post that we proceeded to LangChain, where my intention was to upload multiple files and then chat on the files we select. Here we can leverage the agent feature so that the main Orchestrator can understand if it has the context of the file for which the question is being asked; if not, it would do a tool call to do a RAG search and fetch the output to the UI.
-
-**What you'd do differently with more time:**
+### What you'd do differently with more time:**
 
 - I would try to keep the history for a given file if the user selects clearing history and starting a fresh chat.
 - We can limit the file size as well (less than 10MB).
@@ -167,7 +185,7 @@ We wanted to first start with just uploading a single file and checking if the e
 - I'd like to implement streaming to visualize what is happening on the server side in real time?e.g. processing/embedding of file, tool calling during generating response, etc.
 - Some more changes to the UI to make it look more engaging.
 
-**Edge cases:**
+### Edge cases:
 
 If you ask the bot "What is the capital of India?", it replies with "Delhi." But when you ask "What is the current timestamp?", it says "I don't have access to your device's real-time clock." Basically, the limitation of the backend orchestrator is limited by the tools it has access to. Also, since the LLM comes after the RAG operation and the context of the LLM is only the filtered/fetched chunks, there might be chances of missing context.
 
