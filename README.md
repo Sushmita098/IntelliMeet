@@ -10,7 +10,7 @@ Meeting Transcript Analyzer using RAG (Retrieval-Augmented Generation).
 
 ## Demo
 
-<video src="documents/Intellimeet_recording.mp4" controls width="640"></video>
+**[Watch the IntelliMeet demo video](documents/Intellimeet_recording.mp4)** *(click to play)*
 
 ## Architecture
 
