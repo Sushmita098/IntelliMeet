@@ -24,6 +24,19 @@ function App() {
   const [chatLoading, setChatLoading] = useState(false);
   const [sessionId, setSessionId] = useState(null);
   const [expandedCitations, setExpandedCitations] = useState(() => new Set());
+  
+  // Auth state
+  const [token, setToken] = useState(() => localStorage.getItem('auth_token') || null);
+  const [user, setUser] = useState(() => {
+    const stored = localStorage.getItem('auth_user');
+    return stored ? JSON.parse(stored) : null;
+  });
+  const [showLogin, setShowLogin] = useState(true);
+  const [authEmail, setAuthEmail] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  const [authName, setAuthName] = useState('');
+  const [authError, setAuthError] = useState('');
+  const [authLoading, setAuthLoading] = useState(false);
 
   const toggleCitation = (key) => {
     setExpandedCitations((prev) => {
@@ -34,9 +47,107 @@ function App() {
     });
   };
 
-  const fetchFiles = async () => {
+  const getAuthHeaders = () => {
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  };
+
+  const handleLogin = async () => {
+    if (!authEmail || !authPassword) {
+      setAuthError('Email and password are required');
+      return;
+    }
+    setAuthLoading(true);
+    setAuthError('');
     try {
-      const res = await fetch(`${API_BASE}/files`);
+      const res = await fetch(`${API_BASE}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: authEmail, password: authPassword }),
+      });
+      let data;
+      const contentType = res.headers.get('content-type');
+      if (contentType && contentType.includes('application/json')) {
+        data = await res.json();
+      } else {
+        const text = await res.text();
+        setAuthError(`Server error: ${res.status} ${res.statusText}`);
+        return;
+      }
+      if (res.ok) {
+        setToken(data.access_token);
+        setUser(data.user);
+        localStorage.setItem('auth_token', data.access_token);
+        localStorage.setItem('auth_user', JSON.stringify(data.user));
+        setAuthEmail('');
+        setAuthPassword('');
+      } else {
+        setAuthError(data.detail || 'Login failed');
+      }
+    } catch (err) {
+      setAuthError(`Error: ${err.message}`);
+    }
+    setAuthLoading(false);
+  };
+
+  const handleRegister = async () => {
+    if (!authEmail || !authPassword || !authName) {
+      setAuthError('Name, email, and password are required');
+      return;
+    }
+    if (authPassword.length < 6) {
+      setAuthError('Password must be at least 6 characters');
+      return;
+    }
+    setAuthLoading(true);
+    setAuthError('');
+    try {
+      const res = await fetch(`${API_BASE}/auth/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: authEmail, password: authPassword, name: authName }),
+      });
+      let data;
+      const contentType = res.headers.get('content-type');
+      if (contentType && contentType.includes('application/json')) {
+        data = await res.json();
+      } else {
+        const text = await res.text();
+        setAuthError(`Server error: ${res.status} ${res.statusText}. Please check backend logs.`);
+        return;
+      }
+      if (res.ok) {
+        setAuthError('');
+        setShowLogin(true);
+        setAuthName('');
+        alert('Registration successful! Please login.');
+      } else {
+        setAuthError(data.detail || 'Registration failed');
+      }
+    } catch (err) {
+      setAuthError(`Error: ${err.message}`);
+    }
+    setAuthLoading(false);
+  };
+
+  const handleLogout = () => {
+    setToken(null);
+    setUser(null);
+    setFiles([]);
+    setSelectedFile('');
+    setChatMessages([]);
+    setSessionId(null);
+    localStorage.removeItem('auth_token');
+    localStorage.removeItem('auth_user');
+  };
+
+  const fetchFiles = async () => {
+    if (!token) return;
+    try {
+      const res = await fetch(`${API_BASE}/files`, { headers: getAuthHeaders() });
+      if (res.status === 401) {
+        handleLogout();
+        return;
+      }
       const data = await res.json();
       if (res.ok && Array.isArray(data.files)) {
         setFiles(data.files);
@@ -80,7 +191,16 @@ function App() {
     try {
       const formData = new FormData();
       formData.append('file', file);
-      const res = await fetch(`${API_BASE}/upload`, { method: 'POST', body: formData });
+      const res = await fetch(`${API_BASE}/upload`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: formData,
+      });
+      if (res.status === 401) {
+        handleLogout();
+        setUploadStatus('Session expired. Please login again.');
+        return;
+      }
       const data = await res.json();
       if (res.ok) {
         setUploadStatus(`Uploaded: ${data.filename}`);
@@ -105,13 +225,21 @@ function App() {
     try {
       const res = await fetch(`${API_BASE}/chat`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({
           file_id: selectedFile,
           message: userMsg,
           session_id: sessionId,
         }),
       });
+      if (res.status === 401) {
+        handleLogout();
+        setChatMessages((prev) => [
+          ...prev,
+          { role: 'assistant', content: 'Session expired. Please login again.' },
+        ]);
+        return;
+      }
       const data = await res.json();
       if (res.ok) {
         setSessionId(data.session_id);
@@ -140,14 +268,100 @@ function App() {
     setSessionId(null);
   };
 
+  // Show login/register UI if not authenticated
+  if (!token || !user) {
+    return (
+      <div className="App">
+        <header className="chatbot-header">
+          <h1>Meeting Transcript Analyzer</h1>
+          <span
+            className={`status-dot ${backendStatus === 'connected' ? 'connected' : backendStatus === 'checking' ? 'checking' : 'disconnected'}`}
+            title={backendStatus === 'connected' ? 'Connected' : backendStatus === 'checking' ? 'Checking...' : 'Disconnected'}
+          />
+        </header>
+        <div className="auth-container">
+          <div className="auth-box">
+            <h2>{showLogin ? 'Login' : 'Register'}</h2>
+            {authError && <div className="auth-error">{authError}</div>}
+            {!showLogin && (
+              <div className="auth-field">
+                <label>Name:</label>
+                <input
+                  type="text"
+                  value={authName}
+                  onChange={(e) => setAuthName(e.target.value)}
+                  placeholder="Your name"
+                  disabled={authLoading}
+                />
+              </div>
+            )}
+            <div className="auth-field">
+              <label>Email:</label>
+              <input
+                type="email"
+                value={authEmail}
+                onChange={(e) => setAuthEmail(e.target.value)}
+                placeholder="your@email.com"
+                disabled={authLoading}
+              />
+            </div>
+            <div className="auth-field">
+              <label>Password:</label>
+              <input
+                type="password"
+                value={authPassword}
+                onChange={(e) => setAuthPassword(e.target.value)}
+                placeholder="••••••"
+                disabled={authLoading}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    showLogin ? handleLogin() : handleRegister();
+                  }
+                }}
+              />
+            </div>
+            <button
+              className="auth-submit"
+              onClick={showLogin ? handleLogin : handleRegister}
+              disabled={authLoading}
+            >
+              {authLoading ? 'Please wait...' : showLogin ? 'Login' : 'Register'}
+            </button>
+            <div className="auth-switch">
+              {showLogin ? (
+                <>
+                  Don't have an account?{' '}
+                  <button type="button" onClick={() => { setShowLogin(false); setAuthError(''); }}>
+                    Register
+                  </button>
+                </>
+              ) : (
+                <>
+                  Already have an account?{' '}
+                  <button type="button" onClick={() => { setShowLogin(true); setAuthError(''); }}>
+                    Login
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="App">
       <header className="chatbot-header">
         <h1>Meeting Transcript Analyzer</h1>
-        <span
-          className={`status-dot ${backendStatus === 'connected' ? 'connected' : backendStatus === 'checking' ? 'checking' : 'disconnected'}`}
-          title={backendStatus === 'connected' ? 'Connected' : backendStatus === 'checking' ? 'Checking...' : 'Disconnected'}
-        />
+        <div className="header-right">
+          <span className="user-info">Welcome, {user.name || user.email}</span>
+          <button className="logout-btn" onClick={handleLogout}>Logout</button>
+          <span
+            className={`status-dot ${backendStatus === 'connected' ? 'connected' : backendStatus === 'checking' ? 'checking' : 'disconnected'}`}
+            title={backendStatus === 'connected' ? 'Connected' : backendStatus === 'checking' ? 'Checking...' : 'Disconnected'}
+          />
+        </div>
       </header>
 
       <div className="chatbot-toolbar">

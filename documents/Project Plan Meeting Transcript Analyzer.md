@@ -89,3 +89,35 @@
   * **Frontend:** File selector + chat panel scoped to selected file.  
   * **Frontend:** Chat history display and multi-turn conversation.
 
+---
+
+## **🔵 Step 6: OAuth Authentication & Docker Production Setup** [COMPLETED]
+
+**Goal:** Implement basic OAuth authentication system and create production-ready Docker configuration.
+
+* **Task 6.1: OAuth Backend Implementation [COMPLETED]**  
+  * **Backend:** Add `python-jose[cryptography]` and `passlib[bcrypt]` dependencies.  
+  * **Backend:** Implement user registration (`POST /auth/register`) and login (`POST /auth/login`) endpoints.  
+  * **Backend:** JWT token generation and verification using `python-jose`.  
+  * **Backend:** Password hashing with bcrypt via `passlib`.  
+  * **Backend:** Store users in MongoDB `users` collection.  
+  * **Backend:** Add `user_id` field to transcript chunks for data isolation.  
+* **Task 6.2: Protected Routes & Authorization [COMPLETED]**  
+  * **Backend:** Create `verify_token` dependency for JWT verification.  
+  * **Backend:** Protect `/upload`, `/chat`, `/files` endpoints with authentication.  
+  * **Backend:** Filter transcript queries by `user_id` to ensure data isolation.  
+  * **Backend:** Scope chat sessions by `user_id` + `session_id`.  
+* **Task 6.3: Frontend Authentication UI [COMPLETED]**  
+  * **Frontend:** Add login and registration forms with email/password.  
+  * **Frontend:** Store JWT token in `localStorage`.  
+  * **Frontend:** Add `Authorization: Bearer <token>` header to authenticated API calls.  
+  * **Frontend:** Show login/register UI when not authenticated; show chatbot when authenticated.  
+  * **Frontend:** Add logout functionality and user info display in header.  
+* **Task 6.4: Docker Production Setup [COMPLETED]**  
+  * **Backend:** Create multi-stage `Dockerfile` for FastAPI backend.  
+  * **Frontend:** Create multi-stage `Dockerfile` with nginx for React frontend.  
+  * **Root:** Create `docker-compose.yml` with MongoDB, backend, and frontend services.  
+  * **Root:** Add `.dockerignore` files for backend and frontend.  
+  * **Frontend:** Add `nginx.conf` for production-ready static file serving.  
+  * **Root:** Configure health checks, volumes, and networking in docker-compose.  
+

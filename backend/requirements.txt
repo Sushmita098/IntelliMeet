@@ -7,3 +7,6 @@ python-multipart
 langchain
 langchain-openai
 langchain-core
+python-jose[cryptography]
+bcrypt
+email-validator
